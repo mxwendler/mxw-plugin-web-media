@@ -236,6 +236,22 @@ def onLoad(state):
         pass
 
 
+def onSizeChange(w, h):
+    # the host changed our render size: resize the browser viewport so screenshots
+    # come back at the new resolution, and drop the cached frame.
+    inst = storage.get(media_id)
+    if inst is None:
+        return
+    inst.width = int(w)
+    inst.height = int(h)
+    try:
+        if inst.page is not None:
+            inst.page.set_viewport_size({"width": inst.width, "height": inst.height})
+    except Exception:
+        pass
+    inst.last_frame = None
+
+
 def onClose():
     inst = storage.pop(media_id, None)
     if inst is None:
