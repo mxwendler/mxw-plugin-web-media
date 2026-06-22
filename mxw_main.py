@@ -18,6 +18,7 @@ Rendering uses Playwright (offscreen Chromium). Install once with:
 import os
 import sys
 import time
+import json
 
 
 # Decide where Chromium lives. MUST be set before playwright is imported
@@ -205,6 +206,34 @@ def onRenderFrame(frame):
                 inst.last_frame = _blank(inst.width, inst.height)
 
     return inst.last_frame
+
+
+def onSave():
+    # persist the *current* page url, so a page the user navigated to (rather than
+    # the one in the uri) is restored. the host stores the returned string in the
+    # project and hands it back to onLoad() on reload.
+    inst = storage.get(media_id)
+    if inst is None or inst.page is None:
+        return None
+    try:
+        return json.dumps({"url": inst.page.url})
+    except Exception:
+        return None
+
+
+def onLoad(state):
+    # called once after onOpen() on project load, with the string from onSave().
+    # navigate to the saved url if it differs from where onOpen() already went.
+    inst = storage.get(media_id)
+    if inst is None or inst.page is None or not state:
+        return
+    try:
+        url = json.loads(state).get("url")
+        if url and url != inst.page.url:
+            inst.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            inst.last_frame = None   # force a fresh screenshot next frame
+    except Exception:
+        pass
 
 
 def onClose():
