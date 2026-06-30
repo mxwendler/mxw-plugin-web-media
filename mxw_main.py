@@ -326,6 +326,18 @@ def onLoad(state):
         pass
 
 
+def onDisplayName():
+    # the name shown in the clip's "Video Info" panel. report the live url so it
+    # follows navigation instead of the fixed boot uri. format mirrors the media uri:
+    # "web://" + url (e.g. "web://https://mxwendler.net").
+    inst = storage.get(media_id)
+    if inst is None:
+        return None
+    with inst.lock:
+        url = inst.url
+    return ("web://" + url) if url else None
+
+
 def onRenderPanel():
     # let the user type a url and load it. the host sets the module global 'media_id'
     # before the call, and we are mid-frame inside an active imgui context. the field
