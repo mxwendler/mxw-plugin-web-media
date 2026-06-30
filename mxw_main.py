@@ -103,6 +103,10 @@ class web_instance:
         self.fps = 30.0
         # the url shown / edited in the onRenderPanel() field, and the boot url
         self.url = ""
+        # webpage scroll position as a 0..1 fraction of the scrollable area, set by the
+        # onRenderPanel() sliders and applied by the worker before each screenshot.
+        self.scroll_x = 0.0
+        self.scroll_y = 0.0
         # Playwright objects: created, used and closed ONLY on the worker thread,
         # because the sync API is thread-affine.
         self.playwright = None
@@ -198,6 +202,22 @@ def _worker(inst, start_url, width, height):
                     inst.page.set_viewport_size({"width": width, "height": height})
             except Exception:
                 pass
+
+        # apply the requested scroll (fraction of the scrollable area) before the
+        # screenshot, so the captured frame reflects the slider positions. re-applied
+        # every grab so it stays correct as the page grows / reflows.
+        try:
+            with inst.lock:
+                fx, fy = inst.scroll_x, inst.scroll_y
+            inst.page.evaluate(
+                "([fx, fy]) => {"
+                " const e = document.documentElement;"
+                " const mx = Math.max(0, e.scrollWidth - window.innerWidth);"
+                " const my = Math.max(0, e.scrollHeight - window.innerHeight);"
+                " window.scrollTo(fx * mx, fy * my); }",
+                [fx, fy])
+        except Exception:
+            pass
 
         # screenshot the page and decode it into a BGRA buffer the render thread
         # can upload directly. the screenshot blocks on browser i/o (GIL released),
@@ -353,6 +373,18 @@ def onRenderPanel():
     mxw_imgui.same_line()
     if mxw_imgui.button("Go"):
         _goto(inst, _normalize_url(inst.url))
+
+    # scroll the page horizontally / vertically (0..1 fraction of the scrollable area)
+    mxw_imgui.set_next_item_width(300)
+    changed_x, sx = mxw_imgui.slider_float("Scroll X", inst.scroll_x, 0.0, 1.0)
+    if changed_x:
+        with inst.lock:
+            inst.scroll_x = sx
+    mxw_imgui.set_next_item_width(300)
+    changed_y, sy = mxw_imgui.slider_float("Scroll Y", inst.scroll_y, 0.0, 1.0)
+    if changed_y:
+        with inst.lock:
+            inst.scroll_y = sy
 
 
 def onSizeChange(w, h):
