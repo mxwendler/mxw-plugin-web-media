@@ -90,6 +90,8 @@ os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _resolve_browsers_path()
 import numpy as np
 import cv2
 
+import mxw_imgui  # host UI: draw controls in the clip panel (onRenderPanel)
+
 # ----------------------------------------------------------------------------------
 # per-instance storage, keyed by media_id (set by the host before each call)
 class web_instance:
@@ -97,6 +99,8 @@ class web_instance:
         self.width = 1280
         self.height = 720
         self.fps = 30.0
+        # the url shown / edited in the onRenderPanel() field; the loaded page url
+        self.url = ""
         self.playwright = None
         self.browser = None
         self.page = None
@@ -153,12 +157,35 @@ def _url_from_uri(uri):
     return "https://" + rest
 
 
+def _normalize_url(text):
+    # a url typed into the panel: keep an explicit scheme, default to https otherwise
+    text = text.strip()
+    if not text:
+        return text
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    return "https://" + text
+
+
+def _goto(inst, url):
+    # navigate this instance's page to url and force a fresh screenshot next frame
+    if inst.page is None or not url:
+        return
+    try:
+        inst.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        inst.url = inst.page.url
+        inst.last_frame = None
+    except Exception:
+        pass
+
+
 # ----------------------------------------------------------------------------------
 def onOpen(uri):
     inst = web_instance()
     storage[media_id] = inst
 
     url = _url_from_uri(uri)
+    inst.url = url
     try:
         from playwright.sync_api import sync_playwright
         inst.playwright = sync_playwright().start()
@@ -232,8 +259,27 @@ def onLoad(state):
         if url and url != inst.page.url:
             inst.page.goto(url, wait_until="domcontentloaded", timeout=20000)
             inst.last_frame = None   # force a fresh screenshot next frame
+        if url:
+            inst.url = url
     except Exception:
         pass
+
+
+def onRenderPanel():
+    # let the user type a url and load it. the host sets the module global 'media_id'
+    # before the call, and we are mid-frame inside an active imgui context. the field
+    # text is kept in inst.url; the "Go" button navigates the page.
+    inst = storage.get(media_id)
+    if inst is None:
+        return
+    mxw_imgui.set_next_item_width(300)
+    # input_text returns (changed, new_value)
+    changed, value = mxw_imgui.input_text("URL", inst.url, 1024)
+    if changed:
+        inst.url = value
+    mxw_imgui.same_line()
+    if mxw_imgui.button("Go"):
+        _goto(inst, _normalize_url(inst.url))
 
 
 def onSizeChange(w, h):
